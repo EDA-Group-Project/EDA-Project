@@ -6,6 +6,9 @@ library(tidyverse)
 library(tigris)
 library(sf)
 library(viridis)
+library(leaflet)
+library(rgdal)
+library(stringr)
 options(tigris_class = "sf")
 options(tigris_use_cache = TRUE)
 
@@ -16,11 +19,52 @@ options(tigris_use_cache = TRUE)
 v15<- load_variables(2016, "acs1", cache=TRUE)
 v14<- load_variables(2016, "acs1/profile", cache=TRUE)
 
+leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addProviderTiles("Hydda.Base", options = providerTileOptions(opacity = 0.25)) %>% 
+  addMarkers(lng = -122.41, lat = 45.31, popup = "Portland") %>%
+  addMarkers(lng = -122.26, lat = 37.47, popup = "San Francisco") %>%
+  addMarkers(lng = -89.40, lat = 43.07, popup = "Madison") %>%
+  addMarkers(lng = -73.58, lat = 40.47, popup = "New York") %>%
+  addMarkers(lng = -76.38, lat = 39.18, popup = "Baltimore") %>%
+  addMarkers(lng = -111.54, lat = 40.46, popup = "Salt Lake City") %>% 
+  addMarkers(lng = -81.37, lat = 41.28, popup = "Cleveland") %>%
+  addMarkers(lng = -71.50, lat = 42.21, popup = "Boston") %>%
+  addMarkers(lng = -122.20, lat = 47.37, popup = "Seattle") %>%
+  addMarkers(lng = -87.37, lat = 41.50, popup = "Chicago") %>%
+  addMarkers(lng = -93.14, lat = 44.59, popup = "Minneapolis") %>%
+  addMarkers(lng = -75.10, lat = 39.57, popup = "Philadelphia") %>%
+  addMarkers(lng = -77.02, lat = 38.53, popup = "Washington DC") %>%
+  addMarkers(lng = -77.29, lat = 37.33, popup = "Richmond") %>%
+  addMarkers(lng = -78.50, lat = 42.55, popup = "Buffalo") %>%
+  addMarkers(lng = -105.00, lat = 39.45, popup = "Denver") 
+ 
+lf<- female_lforce$estimate/female_pop$estimate
+datamap<- cbind(female_lforce, lf)
+datamap2<- st_as_sf(datamap, sf_column_name= datamap$geometry)
 
+pal <- colorQuantile(palette = "viridis", domain = datamap2$lf, n=10)
+
+datamap2 %>%
+  st_transform(crs = "+init=epsg:4326") %>%
+  leaflet(width = "100%") %>%
+  addProviderTiles(provider = "CartoDB.Positron") %>%
+  addPolygons(popup = ~ str_extract(NAME, "^([^,]*)"),
+              stroke = FALSE,
+              smoothFactor = 0,
+              fillOpacity = 0.7,
+              color = ~ pal(lf)) %>%
+  addLegend("bottomright", 
+            pal = pal, 
+            values = ~ lf,
+            title = "LFPR Deciles",
+            opacity = 1)
 # Customizing for our Question
 acs<- get_acs(geography = "tract", state= c("WA", "OR", "CA", "TX", "IL", "WI", "NJ", "MN", "HI", "DE",
                                             "MD", "UT", "VA", "OH", "NY", "DC", "WV", "MA", "NH", "CO"), geometry = TRUE, 
               variables = c("DP03_0002", "DP03_0011", "DP03_0001", "DP03_0010"))
+
+
 
 female_pop1<- acs %>% 
   filter(variable=="DP03_0010")
@@ -40,16 +84,25 @@ metros <- core_based_statistical_areas(cb = TRUE) %>%
 
 female_lforce <- st_join(female_lforce1, metros, join = st_within, 
                          left = FALSE) 
+#dump("female_lforce", "data.Rdmpd")
+#source("data.Rdmpd")
+
 total_lforce <- st_join(total_lforce1, metros, join = st_within, 
                         left = FALSE) 
+#dump("total_lforce", "data2.Rdmpd")
+#source("data2.Rdmpd")
 female_pop <- st_join(female_pop1, metros, join = st_within, 
                       left = FALSE) 
+#dump("female_pop", "data3.Rdmpd")
+#source("data3.Rdmpd")
 total_pop <- st_join(total_pop1, metros, join = st_within, 
                      left = FALSE) 
+#dump("total_pop", "data4.Rdmpd")
+#source("data4.Rdmpd")
 metro_areas<- unique(female_lforce$metro_name)
 metro_areas
-#Total Labor Force Calculations and Graphs
 
+#Total Labor Force Calculations and Graphs
 datalist<- list()
 lfprcalculatordata<- function(x, i) {
   localwomenlforce<- female_lforce %>% 
@@ -154,7 +207,7 @@ lfprtotalgrapher<- function(x) {
     scale_color_viridis()+ ggtitle(x)
 }
 # Enter "MSA" in grapher to graph
-
+lfprtotalgrapher("Cleveland-Elyria, OH")
 lfprcalculatordata(metro_areas, 1)
 a<- datalist
 lfprcalculatordata(metro_areas, 2)
@@ -498,6 +551,10 @@ pngtable2<- cbind(MSA, pngtable)
 
 final_data_set<-left_join(datatable1, msacrimedata, by="MSA") %>% 
   left_join(pngtable2, by="MSA")
+Total_Pop<- c(2453168, 3733580, 4727357, 9551030, 568593, 3946533, 20320000, 
+              6096120, 2710489, 9133522, 1100000, 1263617, 2058844, 1215826, 
+              4836511, 2900000)
+final_data_set2<- cbind(final_data_set, Total_Pop)
 
-#write.csv(final_data_set, "projectdata.csv")
+#write.csv(final_data_set2, "projectdata.csv")
 

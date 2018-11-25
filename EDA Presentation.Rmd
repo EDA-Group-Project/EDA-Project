@@ -1,0 +1,460 @@
+---
+title: "EDA Project"
+author: "Blake Bell, Cassandra Gibbs, Iain Kirsch, Tyler O'Toole, Rushma Khatri Subedi"
+date: "`r Sys.Date()`"
+output: 
+  ioslides_presentation:
+    widescreen: TRUE
+    fig_height: 5
+    fig_width: 10
+    df_print: paged
+runtime: shiny
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dev = 'png')
+library(tesseract)
+library(magick)
+library(tidycensus)
+library(tidyverse)
+library(tigris)
+library(sf)
+library(viridis)
+library(shiny)
+library(shinydashboard)
+library(rsconnect)
+library(png)
+library(knitr)
+library(leaflet)
+library(rgdal)
+library(stringr)
+library(RColorBrewer)
+library(colorspace)
+library(scales)
+library(corrplot)
+library(kableExtra)
+library(jtools)
+options(tigris_class = "sf")
+options(tigris_use_cache = TRUE)
+
+source("data.Rdmpd")
+source("data2.Rdmpd")
+source("data3.Rdmpd")
+source("data4.Rdmpd")
+data <- read.csv("projectdata.csv")
+data$Rape_Rate = data$Rapes/data$Total_Pop
+data$Rob_Rate = data$Robberies/data$Total_Pop
+data$Murder_Rate = data$Murders/data$Total_Pop
+data2<- data %>% arrange((Woman_LFPR))
+data$MSA<- as.character(data$MSA)
+rownames(data)<- NULL
+g  <- lm(Woman_LFPR ~ Car_Commute + Index + Transit_Commute + Rape_Rate + Rob_Rate + Murder_Rate +
+           Population_Usage*Income_Difference , data = data)
+# Correlation Matrix
+correlation_data <- data[, c(3:18)]
+res <- cor(correlation_data)
+round(res,2)
+head(res,5)
+```
+
+``` {r echo=FALSE}
+metro_areas<- unique(female_lforce$metro_name)
+datalist<- list()
+lf<- female_lforce$estimate/female_pop$estimate
+datamap<- cbind(female_lforce, lf)
+datamap2<- st_as_sf(datamap, sf_column_name= datamap$geometry)
+pal <- colorQuantile(palette = "viridis", domain = datamap2$lf, n=10)
+df<- data %>% 
+  select(-X)
+
+lfprwomangrapher<- function(x) {
+  localwomenlforce<- female_lforce %>% 
+    filter(metro_name== x)
+  lfwomenlocal<- sum(localwomenlforce$estimate)
+  
+  localtotallforce<- total_lforce %>% 
+    filter(metro_name==x)
+  lftotallocal<- sum(localtotallforce$estimate)
+  
+  localpopwomen<- female_pop %>%
+    filter(metro_name==x)
+  popwomenlocal<- sum(localpopwomen$estimate)
+  
+  localpoptotal<- total_pop %>%
+    filter(metro_name==x)
+  poptotallocal<- sum(localpoptotal$estimate)
+  
+  #Labor Force Participation Rate for San Francisco
+  lftotallocal/poptotallocal
+  lfwomenlocal/popwomenlocal
+  
+  LFPR<- localwomenlforce$estimate/localpopwomen$estimate
+  women_population_local<- localpopwomen$estimate
+  LFPR_Total_local<- localtotallforce$estimate/localpoptotal$estimate
+  total_population_local<- localpoptotal$estimate
+  local_total<- cbind(localtotallforce, LFPR_Total_local, total_population_local, LFPR, women_population_local)
+  
+  # Women
+  ggplot(local_total, aes(fill = LFPR, color = LFPR)) + 
+    geom_sf() + 
+    coord_sf(crs = 26910) + 
+    theme_minimal() + 
+    theme(aspect.ratio = 1) + 
+    scale_fill_viridis() + 
+    scale_color_viridis()
+}
+lfprtotalgrapher<- function(x) {
+  localwomenlforce<- female_lforce %>% 
+    filter(metro_name== x)
+  lfwomenlocal<- sum(localwomenlforce$estimate)
+  
+  localtotallforce<- total_lforce %>% 
+    filter(metro_name==x)
+  lftotallocal<- sum(localtotallforce$estimate)
+  
+  localpopwomen<- female_pop %>%
+    filter(metro_name==x)
+  popwomenlocal<- sum(localpopwomen$estimate)
+  
+  localpoptotal<- total_pop %>%
+    filter(metro_name==x)
+  poptotallocal<- sum(localpoptotal$estimate)
+  
+  #Labor Force Participation Rate for San Francisco
+  lftotallocal/poptotallocal
+  lfwomenlocal/popwomenlocal
+  
+  LFPR_Women_local<- localwomenlforce$estimate/localpopwomen$estimate
+  women_population_local<- localpopwomen$estimate
+  LFPR<- localtotallforce$estimate/localpoptotal$estimate
+  total_population_local<- localpoptotal$estimate
+  local_total<- cbind(localtotallforce, LFPR, total_population_local, LFPR_Women_local, women_population_local)
+  
+  # Graphing MSA Labor Force Participation Rate
+  par(mfrow=c(2,1))
+  ggplot(local_total, aes(fill = LFPR, color = LFPR)) + 
+    geom_sf() + 
+    coord_sf(crs = 26910) + 
+    theme_minimal() + 
+    theme(aspect.ratio = 1) + 
+    scale_fill_viridis() + 
+    scale_color_viridis()
+}
+```
+
+## Question
+<div class="blue">
+- Does crime or the quality of public transportation available affect women's labor force participation rate?
+- We studied Metropolitan Statistical Areas in the United States and merged datasets together to get data for 16 MSAs
+- Our dataset is able to answer this question for the largest American cities, but should not be extrapolated to smaller or foreign cities
+</div>
+
+# Data Import & Transformation
+
+## Datasets
+<div class="blue">
+- ACS Census Data on Labor Force Participation and Population on the Census Tract level off an API
+- Kaggle Crime Data for the United States on the County level
+- SmartAsset's Public Transportation Image on the City level
+  + https://dr5dymrsxhdzh.cloudfront.net/blog/images/a18525/2016/02/public_transportation_1_table.png
+
+</div>
+
+## Data
+<div class="blue">
+- Wrangling involved releveling, and spatial joins for ACS data
+- Relevelling and bringing up crime data to the MSA level
+- ACS Dataset had 158,076 observations of 7 variables
+- Crime Data had 3,136 observations of 24 variables
+- Transportation Data had 25 observations of 7 variables
+</div>
+
+## Final Dataset
+
+``` {r echo=FALSE}
+df %>% 
+  kable() %>%
+  kable_styling(c( "bordered", "condensed", "reponsive")) %>%
+  add_header_above(c(" ", "Census Data" = 2, "Crime Data" = 4, "Transportation Data" = 10)) %>% 
+  row_spec(, row=1:16, bold=TRUE, background="white") %>% 
+  row_spec(, row=0, bold=TRUE, background="white") %>%
+  scroll_box(width = "800px", height = "500px")
+```
+
+## Methodology
+<div class="blue">
+- Basic OLS Regression on 16 Major American Cities
+- Limitations on Transportation data led to small MSA level sample size
+- Small number of observations reduces number of variables that can be used effectively
+
+</div>
+
+# Packages
+
+## Packages Used
+<div class="blue">
+- tidycensus: Used to pull ACS data
+- tesseract: Used to run OCR on images
+- magick: Image processing in R
+- tidyverse (dplyr, ggplot2): Data manipulation and visualization
+- tigris, sf: Used for Census TIGER shapefiles, Simple features for spatial data
+- knitr, kableExtra: tables and slidebox
+- viridis, RColorBrewer, scales, colorspace: Color schemes for graphs
+- shiny, shinydashboard, rsconnect: Used for interactive graphs
+- leaflet, rgdal, stringr: Used for large maps of the US
+- corrplot, jtools: Correlation plot to look at variables, effect plots
+</div>
+
+# Exploratory Data Analysis
+
+## MSAs Studied
+
+``` {r echo=FALSE}
+leaflet() %>%
+  addProviderTiles("Esri.WorldImagery") %>%
+  addMarkers(lng = -122.41, lat = 45.31, popup = "Portland") %>%
+  addMarkers(lng = -122.26, lat = 37.47, popup = "San Francisco") %>%
+  addMarkers(lng = -89.40, lat = 43.07, popup = "Madison") %>%
+  addMarkers(lng = -73.58, lat = 40.47, popup = "New York") %>%
+  addMarkers(lng = -76.38, lat = 39.18, popup = "Baltimore") %>%
+  addMarkers(lng = -111.54, lat = 40.46, popup = "Salt Lake City") %>% 
+  addMarkers(lng = -81.37, lat = 41.28, popup = "Cleveland") %>%
+  addMarkers(lng = -71.50, lat = 42.21, popup = "Boston") %>%
+  addMarkers(lng = -122.20, lat = 47.37, popup = "Seattle") %>%
+  addMarkers(lng = -87.37, lat = 41.50, popup = "Chicago") %>%
+  addMarkers(lng = -93.14, lat = 44.59, popup = "Minneapolis") %>%
+  addMarkers(lng = -75.10, lat = 39.57, popup = "Philadelphia") %>%
+  addMarkers(lng = -77.02, lat = 38.53, popup = "Washington DC") %>%
+  addMarkers(lng = -77.29, lat = 37.33, popup = "Richmond") %>%
+  addMarkers(lng = -78.50, lat = 42.55, popup = "Buffalo") %>%
+  addMarkers(lng = -105.00, lat = 39.45, popup = "Denver")
+```
+
+## Best Areas for Women's Labor Force Participation
+
+``` {r echo=FALSE}
+datamap2 %>%
+  st_transform(crs = "+init=epsg:4326") %>%
+  leaflet(width = "100%") %>%
+  addProviderTiles(provider = "Esri.WorldImagery") %>%
+  addPolygons(popup = ~ str_extract(NAME, "^([^,]*)"),
+              stroke = FALSE,
+              smoothFactor = 0,
+              fillOpacity = 0.7,
+              color = ~ pal(lf)) %>%
+  addLegend("bottomright", 
+            pal = pal, 
+            values = ~ lf,
+            title = "LFPR Deciles",
+            opacity = 1)
+
+```
+
+## Labor Force Participation
+
+```{r echo=FALSE}
+ui <- dashboardPage(skin = "blue",
+                    dashboardHeader(title= "LFPR by MSA", titleWidth = 200),
+                    dashboardSidebar(disable=TRUE),
+                    dashboardBody(
+                      fillPage(padding = 0,
+           box(title="Labor Force Participation Rate", id="normal", solidHeader = TRUE, status = "info",
+                    plotOutput("plot1", height = 250)), 
+            
+            box(title="MSA to Examine", background = "black",
+                    selectInput("variable", "MSA:", choices= sort(metro_areas), selected="San Francisco-Oakland-Hayward, CA"))
+            )))
+
+
+server <- function(input, output) {
+  
+   
+    output$plot1<- renderPlot({
+    par(mfrow=c(1,1))
+    par(mar = c(4, 5, 4, 4)) 
+    lfprtotalgrapher(input$variable)
+    #add_legend("bottomright", legend=c("State Recession", "National Recession"),
+               #col=c("grey", "red"), pch=15, bty='n', horiz=TRUE)
+    })
+
+   }
+
+
+shinyApp(ui=ui, server=server)
+
+```
+
+## Women's Labor Force Participation
+
+```{r echo=FALSE}
+ui <- dashboardPage(skin = "blue",
+                    dashboardHeader(title= "Women's LFPR by MSA", titleWidth = 200),
+                    dashboardSidebar(disable=TRUE),
+                    dashboardBody(
+                      fillPage(padding = 0,
+           box(title="Labor Force Participation Rate", id="normal", solidHeader = TRUE, status = "info",
+                    plotOutput("plot1", height = 250)), 
+            
+            box(title="MSA to Examine", background = "black",
+                    selectInput("variable", "MSA:", choices= sort(metro_areas), selected="San Francisco-Oakland-Hayward, CA"))
+            )))
+
+
+server <- function(input, output) {
+  
+   
+    output$plot1<- renderPlot({
+    par(mfrow=c(1,1))
+    par(mar = c(4, 5, 4, 4)) 
+    lfprwomangrapher(input$variable)
+    #add_legend("bottomright", legend=c("State Recession", "National Recession"),
+               #col=c("grey", "red"), pch=15, bty='n', horiz=TRUE)
+    })
+
+   }
+
+
+shinyApp(ui=ui, server=server)
+
+```
+
+## Study of LFPR vs. Women's LFPR
+
+```{r echo=FALSE}
+ggplot(data, aes(x=Total_LFPR, y=Woman_LFPR, col = MSA))+
+  geom_point(size=3, alpha = .75)+
+  ggtitle("Labor Force Participation Rates")+
+  labs(x= "Total LFPR", y = "Women's LFPR") +
+  scale_y_continuous(labels = percent) +
+  scale_x_continuous(labels = percent) +
+  theme_dark()
+
+```
+
+## Crime Rate vs. Women's LFPR
+
+```{r echo=FALSE}
+ggplot(data, aes(x=Crime_Rate_Per_100k, y=Woman_LFPR, col = MSA))+
+  geom_point(size=3, alpha = .75)+
+  ggtitle("Crime Rates and Women's LFPR")+
+  labs(x= "Crime Per 100k", y = "LFPR") +
+  scale_y_continuous(labels = percent) +
+  theme_dark()
+```
+
+## Women's LFPR by MSA
+
+```{r echo=FALSE}
+ggplot(data, aes(x=reorder(MSA, Woman_LFPR), y=Woman_LFPR, fill=MSA))+
+  geom_bar(stat = "identity")+
+  ggtitle("Women's LFPR by MSA")+
+  labs(x="", y = "")+
+  scale_y_continuous(labels = percent) +
+  scale_fill_viridis(discrete = TRUE) +
+  theme_dark()+
+  theme(plot.title = element_text(hjust = 0.5)) +
+    coord_flip() +
+  guides(fill=FALSE)
+```
+
+## Transportation Quality Index
+
+```{r echo=FALSE}
+ggplot(data, aes(x=reorder(MSA, Index), y=Index, fill=MSA))+
+  geom_bar(stat = "identity")+
+  ggtitle("Index by MSA")+
+  labs(x="", y = "")+
+  scale_y_continuous() +
+  scale_fill_viridis(discrete = TRUE) +
+  theme_dark()+
+  theme(plot.title = element_text(hjust = 0.5)) +
+    coord_flip() +
+  guides(fill=FALSE)
+```
+
+## Correlation Plot
+```{r echo=FALSE}
+corrplot(res, method = "circle")
+```
+
+# Results
+
+## Regression Results
+
+<div class="blue">
+- When the Transportation Index increases by 1, women's participation increases by 0.007 (units are in percentage points)
+- When the robbery rate goes up by 1 percentage point, women's participation decreases by 0.4 percentage points
+- When the average time it takes to commute by car increases by 1 minute, the labor force participation rate for women decreases by 0.014 percentage points
+- The model explains 96.11% of the variation in the women's labor force participation rate
+</div>
+
+## Mixed Results
+
+```{r echo=FALSE}
+ui <- dashboardPage(skin = "blue",
+                    dashboardHeader(title= "Effectiveness of Analysis", titleWidth = 300),
+                    dashboardSidebar(disable=TRUE),
+                    dashboardBody(
+                      fillPage(padding = 0,
+           box(title="Effect Plot for Robbery Rate", id="normal", solidHeader = TRUE, status = "info",
+                    plotOutput("plot1", height = 250)),
+           box(title="Effect Plot for Transportation Index", id="normal", solidHeader = TRUE, status = "info",
+                    plotOutput("plot2", height = 250))
+            )))
+
+
+server <- function(input, output) {
+  
+   
+    output$plot1<- renderPlot({
+    effect_plot(g, pred = Rob_Rate, interval = TRUE, plot.points = TRUE, x.label = "Robbery Rate", 
+            y.label = "Women's Labor Force Participation Rate")
+    })
+    output$plot2<- renderPlot({
+    effect_plot(g, pred = Index, interval = TRUE, plot.points = TRUE, x.label = "Robbery Rate", 
+            y.label = "Women's Labor Force Participation Rate")
+    })
+
+   }
+
+
+shinyApp(ui=ui, server=server)
+
+```
+
+## Summary of Results
+
+<div class="blue">
+- The Murder and Robbery Rates, in addition to the Index (Overall Transportation Score) are all significant at the 5% level
+- The results are mixed, and in order to better understand the question, data at the county or census tract level for transportation would be required
+- Individual Crime Rates are more important to labor force participation for women than the overall crime rate
+- Better transportation does appear to improve labor force participation, but likely not as much as our model suggests
+</div>
+
+## Works Cited
+
+<div class="blue">
+- "Data Access and Dissemination Systems (DADS)." American FactFinder API, United States Census Bureau, 5 Oct. 2010, factfinder.census.gov/faces/nav/jsf/pages/searchresults.xhtml?refresh=t.
+- "US Crime Data." Kaggle, www.kaggle.com/datasets.
+- Wallace, Nick. "The Best Cities for Public Transportation." SmartAsset, SmartAsset, 20 Sept. 2018, smartasset.com/mortgage/best-cities-for-public-transportation.
+</div>
+
+## Questions?
+
+```{r echo=FALSE}
+ggplot(data, aes(x=reorder(MSA, Index), y=Index, fill=MSA))+
+  geom_bar(stat = "identity")+
+  ggtitle("Index by MSA")+
+  labs(x="", y = "")+
+  scale_y_continuous() +
+  scale_fill_viridis(discrete = TRUE) +
+  theme_dark()+
+  theme(plot.title = element_text(hjust = 0.5)) +
+    coord_flip() +
+  guides(fill=FALSE)
+```
+
+
+
+
+
